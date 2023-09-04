@@ -70,7 +70,7 @@ static void print_document(cmark_node *document, writer_format writer,
     exit(1);
   }
   printf("%s", result);
-  document->mem->free(result);
+  document->mem->free(document->mem->ctx, result);
 }
 
 int main(int argc, char *argv[]) {
