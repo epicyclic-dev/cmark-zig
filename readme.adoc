@@ -1,0 +1,16 @@
+== CMark wrapped for Zig
+
+This is https://github.com/commonmark/cmark[CMark] with a fairly bare bones wrapper
+around it.
+
+There exist pure Zig markdown parsers, so why bother doing this? The only up-to-date Zig
+markdown parser is actually a port of the github-flavored-markdown fork of CMark, which
+on paper does not appear to implement the 0.30 version of the commonmark spec
+(despite that version being over 2 years old at this point). I also do not need or want
+the GFM extensions, which are poorly documented. Ironically, one of the interesting
+features (footnotes) is completely omitted from the "gfm commonmark spec", as far as I
+can tell. Additionally, the pure Zig port is not dependency-free. It uses libPCRE to run the
+regular expressions required by the parser, whereas commonmark has them pre-compiled to
+C source with re2c.
+
+Plus I wanted to have a markdown parser project with an Asciidoc readme.
