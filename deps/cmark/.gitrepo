@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/commonmark/cmark.git
+	branch = 0.30.3
+	commit = 5ba25ff40eba44c811f79ab6a792baf945b8307c
+	parent = bb99771ac83ea85da0e1ab2c6c0c3475a7d21726
+	method = merge
+	cmdver = 0.4.6
