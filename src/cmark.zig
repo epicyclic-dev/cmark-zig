@@ -60,7 +60,14 @@ pub const ParseOptions = packed struct(u32) {
     _padding: u21 = 0, // skip indices 11-31
 };
 
-pub const RenderOptions = packed struct(u32) {
+pub const RenderFormat = enum { xml, html, man, commonmark, latex };
+
+pub const RenderOptions = struct {
+    flags: RenderFlags = .{},
+    width: c_int = 0,
+};
+
+pub const RenderFlags = packed struct(u32) {
     _skip_0: bool = false, // for some reason 1 << 0 is skipped (oversight?)
 
     include_sourcepos: bool = false, // index 1
@@ -78,10 +85,10 @@ pub const RenderOptions = packed struct(u32) {
 };
 
 comptime {
-    std.debug.assert(@as(u32, @bitCast(RenderOptions{ .include_sourcepos = true })) == cmark.CMARK_OPT_SOURCEPOS);
-    std.debug.assert(@as(u32, @bitCast(RenderOptions{ .softbreaks_as_hardbreaks = true })) == cmark.CMARK_OPT_HARDBREAKS);
-    std.debug.assert(@as(u32, @bitCast(RenderOptions{ .softbreaks_as_spaces = true })) == cmark.CMARK_OPT_NOBREAKS);
-    std.debug.assert(@as(u32, @bitCast(RenderOptions{ .allow_unsafe_html = true })) == cmark.CMARK_OPT_UNSAFE);
+    std.debug.assert(@as(u32, @bitCast(RenderFlags{ .include_sourcepos = true })) == cmark.CMARK_OPT_SOURCEPOS);
+    std.debug.assert(@as(u32, @bitCast(RenderFlags{ .softbreaks_as_hardbreaks = true })) == cmark.CMARK_OPT_HARDBREAKS);
+    std.debug.assert(@as(u32, @bitCast(RenderFlags{ .softbreaks_as_spaces = true })) == cmark.CMARK_OPT_NOBREAKS);
+    std.debug.assert(@as(u32, @bitCast(RenderFlags{ .allow_unsafe_html = true })) == cmark.CMARK_OPT_UNSAFE);
     std.debug.assert(@as(u32, @bitCast(ParseOptions{ .validate_utf8 = true })) == cmark.CMARK_OPT_VALIDATE_UTF8);
     std.debug.assert(@as(u32, @bitCast(ParseOptions{ .smart_quotes_and_dashes = true })) == cmark.CMARK_OPT_SMART);
 }
@@ -145,7 +152,7 @@ fn cmarkFree(ctx: ?*anyopaque, mem: ?*anyopaque) callconv(.C) void {
     allocator.free(raw_mem);
 }
 
-fn wrapCmarkAllocator(allocator: *const std.mem.Allocator) cmark.cmark_mem {
+pub fn wrapCmarkAllocator(allocator: *const std.mem.Allocator) cmark.cmark_mem {
     return .{
         .ctx = @constCast(allocator),
         .calloc = cmarkCalloc,
@@ -224,72 +231,21 @@ const CmarkNode = union(enum) {
         }
     }
 
-    pub fn render_html(self: CmarkNode, options: RenderOptions) ![:0]const u8 {
-        switch (self) {
-            inline else => |node| {
-                const result: [*:0]const u8 = cmark.cmark_render_html(
-                    @ptrCast(node),
-                    @bitCast(options),
-                ) orelse return error.Failed;
+    pub fn render(self: CmarkNode, format: RenderFormat, options: RenderOptions) ![:0]const u8 {
+        const unwrapped: *cmark.cmark_node = switch (self) {
+            inline else => |node| @ptrCast(node),
+        };
+        const flags: c_int = @bitCast(options.flags);
 
-                return std.mem.sliceTo(result, 0);
-            },
-        }
-    }
+        const result: [*:0]const u8 = switch (format) {
+            .xml => cmark.cmark_render_xml(unwrapped, flags) orelse return error.Failed,
+            .html => cmark.cmark_render_html(unwrapped, flags) orelse return error.Failed,
+            .man => cmark.cmark_render_man(unwrapped, flags, options.width) orelse return error.Failed,
+            .commonmark => cmark.cmark_render_commonmark(unwrapped, flags, options.width) orelse return error.Failed,
+            .latex => cmark.cmark_render_latex(unwrapped, flags, options.width) orelse return error.Failed,
+        };
 
-    pub fn render_xml(self: CmarkNode, options: RenderOptions) ![:0]const u8 {
-        switch (self) {
-            inline else => |node| {
-                const result: [*:0]const u8 = cmark.cmark_render_xml(
-                    @ptrCast(node),
-                    @bitCast(options),
-                ) orelse return error.Failed;
-
-                return std.mem.sliceTo(result, 0);
-            },
-        }
-    }
-
-    pub fn render_man(self: CmarkNode, width: u32, options: RenderOptions) ![:0]const u8 {
-        switch (self) {
-            inline else => |node| {
-                const result: [*:0]const u8 = cmark.cmark_render_man(
-                    @ptrCast(node),
-                    @bitCast(options),
-                    width,
-                ) orelse return error.Failed;
-
-                return std.mem.sliceTo(result, 0);
-            },
-        }
-    }
-
-    pub fn render_commonmark(self: CmarkNode, width: u32, options: RenderOptions) ![:0]const u8 {
-        switch (self) {
-            inline else => |node| {
-                const result: [*:0]const u8 = cmark.cmark_render_commonmark(
-                    @ptrCast(node),
-                    @bitCast(options),
-                    width,
-                ) orelse return error.Failed;
-
-                return std.mem.sliceTo(result, 0);
-            },
-        }
-    }
-
-    pub fn render_latex(self: CmarkNode, width: u32, options: RenderOptions) ![:0]const u8 {
-        switch (self) {
-            inline else => |node| {
-                const result: [*:0]const u8 = cmark.cmark_render_latex(
-                    @ptrCast(node),
-                    @bitCast(options),
-                    width,
-                ) orelse return error.Failed;
-
-                return std.mem.sliceTo(result, 0);
-            },
-        }
+        return std.mem.sliceTo(result, 0);
     }
 
     pub fn unlink(self: CmarkNode) void {
@@ -366,6 +322,7 @@ const CmarkNode = union(enum) {
             done = cmark.CMARK_EVENT_DONE,
             enter = cmark.CMARK_EVENT_ENTER,
             exit = cmark.CMARK_EVENT_EXIT,
+            visit, // a new event we introduce for nodes that will never have `exit` called on them to simplify consumer logic
         };
 
         pub const NodeVisit = struct {
@@ -381,13 +338,23 @@ const CmarkNode = union(enum) {
             const event: Event = @enumFromInt(cmark.cmark_iter_next(@ptrCast(self)));
             switch (event) {
                 .done => return null,
-                .none => @panic("whoah nelly"),
-                else => |entex| {
-                    return .{
-                        .event = entex,
-                        .node = CmarkNode.fromCNode(cmark.cmark_iter_get_node(@ptrCast(self))) catch unreachable,
+                .enter, .exit => |evt| {
+                    const node = CmarkNode.fromCNode(cmark.cmark_iter_get_node(@ptrCast(self))) catch unreachable;
+                    const entex: Event = switch (node) {
+                        .html_block,
+                        .thematic_break,
+                        .code_block,
+                        .text,
+                        .softbreak,
+                        .linebreak,
+                        .code,
+                        .html_inline,
+                        => .visit,
+                        else => evt,
                     };
+                    return .{ .event = entex, .node = node };
                 },
+                .none, .visit => unreachable,
             }
         }
 
@@ -534,6 +501,13 @@ pub const Parser = struct {
         return self;
     }
 
+    pub fn initWithWrappedAllocator(mem: *cmark.cmark_mem, options: ParseOptions) !Parser {
+        return cmark.cmark_parser_new_with_mem(
+            @bitCast(options),
+            mem,
+        ) orelse error.OutOfMemory;
+    }
+
     pub fn feed(self: Parser, buffer: []const u8) void {
         cmark.cmark_parser_feed(self._parser, buffer.ptr, buffer.len);
     }
@@ -546,8 +520,12 @@ pub const Parser = struct {
     }
 
     pub fn deinit(self: Parser) void {
-        cmark.cmark_parser_free(self._parser);
+        self.deinitParser();
         self.allocator.destroy(self._cmark_mem);
+    }
+
+    pub fn deinitParser(self: Parser) void {
+        cmark.cmark_parser_free(self._parser);
     }
 };
 
@@ -555,19 +533,43 @@ pub const Parser = struct {
 // with our allocator wrapping strategy. Basically, the parser has to live through
 // node rendering. Due to this, it probably makes sense to keep a hard association
 // between the parser and the node tree.
-pub fn parse(allocator: std.mem.Allocator, buffer: []const u8, options: ParseOptions) !CmarkNode {
-    const parser = try Parser.init(&allocator, options);
-    defer parser.deinit();
+pub fn parse(allocator: *std.mem.Allocator, buffer: []const u8, options: ParseOptions) !CmarkNode {
+    const parser = try Parser.init(allocator, options);
+    defer parser.deinitParser();
 
     parser.feed(buffer);
 
-    return try parser.finish;
+    return try parser.finish();
 }
 
 // pub fn parseFile(allocator: std.mem.Allocator, path: []const u8, options: ParseOptions) !CmarkNode
 
-pub fn main() void {
+pub fn main() !void {
     const a = std.heap.page_allocator;
-    const parser = Parser.init(&a, .{}) catch @panic("noop");
+    const parser = try Parser.init(&a, .{});
     defer parser.deinit();
+
+    parser.feed(
+        \\###### Test
+        \\
+        \\This is a test of *commonmark* **parsing**
+        \\
+        \\---
+        \\
+        \\ * `good`
+        \\ * [bye](bye)
+        \\
+    );
+
+    const node = try parser.finish();
+    defer node.deinit();
+
+    const iterator = try node.iterator();
+    defer iterator.deinit();
+
+    while (iterator.next()) |visit| {
+        std.debug.print("{s} {s}\n", .{ @tagName(visit.event), @tagName(visit.node) });
+    }
+
+    std.debug.print("{s}\n", .{try node.render(.html, .{})});
 }
