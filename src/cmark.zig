@@ -152,7 +152,7 @@ fn cmarkFree(ctx: ?*anyopaque, mem: ?*anyopaque) callconv(.C) void {
     allocator.free(raw_mem);
 }
 
-pub fn wrapCmarkAllocator(allocator: *const std.mem.Allocator) cmark.cmark_mem {
+pub fn wrapAllocator(allocator: *const std.mem.Allocator) cmark.cmark_mem {
     return .{
         .ctx = @constCast(allocator),
         .calloc = cmarkCalloc,
@@ -161,36 +161,36 @@ pub fn wrapCmarkAllocator(allocator: *const std.mem.Allocator) cmark.cmark_mem {
     };
 }
 
-const CmarkNode = union(enum) {
-    document: *CmarkOpaqueNode,
-    heading: *CmarkHeadingNode,
-    block_quote: *CmarkOpaqueNode,
+const Node = union(enum) {
+    document: *OpaqueNode,
+    heading: *HeadingNode,
+    block_quote: *OpaqueNode,
 
-    bullet_list: *CmarkOpaqueNode,
-    ordered_list: *CmarkOrderedListNode,
-    item: *CmarkOpaqueNode,
+    bullet_list: *OpaqueNode,
+    ordered_list: *OrderedListNode,
+    item: *OpaqueNode,
 
-    code_block: *CmarkOpaqueNode,
-    html_block: *CmarkOpaqueNode,
-    custom_block: *CmarkOpaqueNode,
-    thematic_break: *CmarkOpaqueNode,
+    code_block: *OpaqueNode,
+    html_block: *BlockNode,
+    custom_block: *CustomNode,
+    thematic_break: *OpaqueNode,
 
-    paragraph: *CmarkOpaqueNode,
-    text: *CmarkOpaqueNode,
-    softbreak: *CmarkOpaqueNode,
-    linebreak: *CmarkOpaqueNode,
+    paragraph: *OpaqueNode,
+    text: *BlockNode,
+    softbreak: *OpaqueNode,
+    linebreak: *OpaqueNode,
 
-    html_inline: *CmarkOpaqueNode,
-    custom_inline: *CmarkOpaqueNode,
+    html_inline: *BlockNode,
+    custom_inline: *CustomNode,
 
-    code: *CmarkOpaqueNode,
-    emph: *CmarkOpaqueNode,
-    strong: *CmarkOpaqueNode,
+    code: *BlockNode,
+    emph: *OpaqueNode,
+    strong: *OpaqueNode,
 
-    link: *CmarkOpaqueNode,
-    image: *CmarkOpaqueNode,
+    link: *LinkNode,
+    image: *LinkNode,
 
-    fn fromCNode(c_node: ?*cmark.cmark_node) !CmarkNode {
+    fn fromCNode(c_node: ?*cmark.cmark_node) !Node {
         const node = c_node orelse return error.Failed;
 
         switch (@as(NodeType, @enumFromInt(cmark.cmark_node_get_type(@ptrCast(node))))) {
@@ -223,7 +223,7 @@ const CmarkNode = union(enum) {
         }
     }
 
-    pub fn deinit(self: CmarkNode) void {
+    pub fn deinit(self: Node) void {
         switch (self) {
             inline else => |node| {
                 cmark.cmark_node_free(@ptrCast(node));
@@ -231,7 +231,7 @@ const CmarkNode = union(enum) {
         }
     }
 
-    pub fn render(self: CmarkNode, format: RenderFormat, options: RenderOptions) ![:0]const u8 {
+    pub fn render(self: Node, format: RenderFormat, options: RenderOptions) ![:0]const u8 {
         const unwrapped: *cmark.cmark_node = switch (self) {
             inline else => |node| @ptrCast(node),
         };
@@ -248,7 +248,7 @@ const CmarkNode = union(enum) {
         return std.mem.sliceTo(result, 0);
     }
 
-    pub fn unlink(self: CmarkNode) void {
+    pub fn unlink(self: Node) void {
         switch (self) {
             inline else => |node| {
                 cmark.cmark_unlink_node(@ptrCast(node));
@@ -257,7 +257,7 @@ const CmarkNode = union(enum) {
     }
 
     // inserts self before sibling
-    pub fn insertBefore(self: CmarkNode, sibling: CmarkNode) !void {
+    pub fn insertBefore(self: Node, sibling: Node) !void {
         switch (self) {
             inline else => |node| switch (sibling) {
                 inline else => |sib_node| {
@@ -270,7 +270,7 @@ const CmarkNode = union(enum) {
     }
 
     // inserts self after sibling
-    pub fn insertAfter(self: CmarkNode, sibling: CmarkNode) !void {
+    pub fn insertAfter(self: Node, sibling: Node) !void {
         switch (self) {
             inline else => |node| switch (sibling) {
                 inline else => |sib_node| {
@@ -283,7 +283,7 @@ const CmarkNode = union(enum) {
     }
 
     // replace self with new. Does not free self.
-    pub fn replaceWith(self: CmarkNode, new: CmarkNode) !void {
+    pub fn replaceWith(self: Node, new: Node) !void {
         switch (self) {
             inline else => |node| switch (new) {
                 inline else => |new_node| {
@@ -294,7 +294,7 @@ const CmarkNode = union(enum) {
         }
     }
 
-    pub fn prependChild(self: CmarkNode, child: CmarkNode) !void {
+    pub fn prependChild(self: Node, child: Node) !void {
         switch (self) {
             inline else => |node| switch (child) {
                 inline else => |child_node| {
@@ -305,7 +305,7 @@ const CmarkNode = union(enum) {
         }
     }
 
-    pub fn appendChild(self: CmarkNode, child: CmarkNode) !void {
+    pub fn appendChild(self: Node, child: Node) !void {
         switch (self) {
             inline else => |node| switch (child) {
                 inline else => |child_node| {
@@ -314,6 +314,30 @@ const CmarkNode = union(enum) {
                 },
             },
         }
+    }
+
+    pub fn getStartLine(self: Node) c_int {
+        return switch (self) {
+            inline else => |node| node.getStartLine(),
+        };
+    }
+
+    pub fn getStartColumn(self: Node) c_int {
+        return switch (self) {
+            inline else => |node| node.getStartColumn(),
+        };
+    }
+
+    pub fn getEndLine(self: Node) c_int {
+        return switch (self) {
+            inline else => |node| node.getEndLine(),
+        };
+    }
+
+    pub fn getEndColumn(self: Node) c_int {
+        return switch (self) {
+            inline else => |node| node.getEndColumn(),
+        };
     }
 
     pub const NodeIterator = opaque {
@@ -327,7 +351,7 @@ const CmarkNode = union(enum) {
 
         pub const NodeVisit = struct {
             event: Event,
-            node: CmarkNode,
+            node: Node,
         };
 
         pub fn deinit(self: *NodeIterator) void {
@@ -339,7 +363,7 @@ const CmarkNode = union(enum) {
             switch (event) {
                 .done => return null,
                 .enter, .exit => |evt| {
-                    const node = CmarkNode.fromCNode(cmark.cmark_iter_get_node(@ptrCast(self))) catch unreachable;
+                    const node = Node.fromCNode(cmark.cmark_iter_get_node(@ptrCast(self))) catch unreachable;
                     const entex: Event = switch (node) {
                         .html_block,
                         .thematic_break,
@@ -370,12 +394,12 @@ const CmarkNode = union(enum) {
             }
         }
 
-        pub fn root(self: *NodeIterator) CmarkNode {
-            return CmarkNode.fromCNode(cmark.cmark_iter_get_root(@ptrCast(self))) catch unreachable;
+        pub fn root(self: *NodeIterator) Node {
+            return Node.fromCNode(cmark.cmark_iter_get_root(@ptrCast(self))) catch unreachable;
         }
     };
 
-    pub fn iterator(self: CmarkNode) !*NodeIterator {
+    pub fn iterator(self: Node) !*NodeIterator {
         switch (self) {
             inline else => |node| {
                 const iter: *cmark.cmark_iter = cmark.cmark_iter_new(@ptrCast(node)) orelse
@@ -386,7 +410,7 @@ const CmarkNode = union(enum) {
     }
 };
 
-pub fn CmarkNodeCommon(comptime Self: type) type {
+pub fn NodeCommon(comptime Self: type) type {
     return struct {
         pub fn getUserData(self: *Self) ?*anyopaque {
             return @ptrCast(cmark.cmark_node_get_user_data(@ptrCast(self)));
@@ -395,10 +419,26 @@ pub fn CmarkNodeCommon(comptime Self: type) type {
         pub fn setUserData(self: *Self, user_data: ?*anyopaque) bool {
             return cmark.cmark_node_set_user_data(@ptrCast(self), user_data) == 1;
         }
+
+        pub fn getStartLine(self: *Self) c_int {
+            return cmark.cmark_node_get_start_line(@ptrCast(self));
+        }
+
+        pub fn getStartColumn(self: *Self) c_int {
+            return cmark.cmark_node_get_start_column(@ptrCast(self));
+        }
+
+        pub fn getEndLine(self: *Self) c_int {
+            return cmark.cmark_node_get_end_line(@ptrCast(self));
+        }
+
+        pub fn getEndColumn(self: *Self) c_int {
+            return cmark.cmark_node_get_end_column(@ptrCast(self));
+        }
     };
 }
 
-pub fn CmarkBlockNodeContents(comptime Self: type) type {
+pub fn BlockNodeCommon(comptime Self: type) type {
     return struct {
         pub fn getContent(self: *Self) [:0]const u8 {
             return cmark.cmark_node_get_literal(@ptrCast(self));
@@ -410,68 +450,130 @@ pub fn CmarkBlockNodeContents(comptime Self: type) type {
     };
 }
 
-pub const CmarkOpaqueNode = opaque {
-    pub usingnamespace CmarkNodeCommon(@This());
+pub const OpaqueNode = opaque {
+    pub usingnamespace NodeCommon(@This());
 };
 
-pub const CmarkHeadingNode = opaque {
-    pub fn getLevel(self: *CmarkHeadingNode) i3 {
+pub const HeadingNode = opaque {
+    pub usingnamespace NodeCommon(@This());
+
+    pub fn getLevel(self: *HeadingNode) i3 {
         return @intCast(cmark.cmark_node_get_heading_level(@ptrCast(self)));
     }
 
-    pub fn setLevel(self: *CmarkHeadingNode, level: i3) !void {
+    pub fn setLevel(self: *HeadingNode, level: i3) !void {
         if (cmark.cmark_node_set_heading_level(@ptrCast(self), level) != 1)
             return error.Failed;
     }
-
-    pub usingnamespace CmarkNodeCommon(@This());
 };
 
-pub const CmarkOrderedListNode = opaque {
-    pub fn getDelimeter(self: *CmarkOrderedListNode) DelimType {
+pub const OrderedListNode = opaque {
+    pub usingnamespace NodeCommon(@This());
+
+    pub fn getDelimeter(self: *OrderedListNode) DelimType {
         return @enumFromInt(cmark.cmark_node_get_list_delim(@ptrCast(self)));
     }
 
-    pub fn setDelimiter(self: *CmarkOrderedListNode, new: DelimType) !void {
+    pub fn setDelimiter(self: *OrderedListNode, new: DelimType) !void {
         if (cmark.cmark_node_set_list_delim(@ptrCast(self), @intFromEnum(new)) != 1)
             return error.Failed;
     }
 
-    pub fn getStart(self: *CmarkOrderedListNode) i32 {
+    pub fn getStart(self: *OrderedListNode) i32 {
         return @intCast(cmark.cmark_node_get_list_start(@ptrCast(self)));
     }
 
-    pub fn setStart(self: *CmarkOrderedListNode, start: i32) !void {
+    pub fn setStart(self: *OrderedListNode, start: i32) !void {
         if (cmark.cmark_node_get_list_start(@ptrCast(self), @intCast(start)) != 1)
             return error.Failed;
     }
 
-    pub fn getTight(self: *CmarkOrderedListNode) bool {
+    pub fn getTight(self: *OrderedListNode) bool {
         return cmark.cmark_node_get_list_start(@ptrCast(self)) == 1;
     }
 
-    pub fn setTight(self: *CmarkOrderedListNode, tight: bool) !void {
+    pub fn setTight(self: *OrderedListNode, tight: bool) !void {
         if (cmark.cmark_node_get_list_start(@ptrCast(self), @intFromBool(tight)) != 1)
             return error.Failed;
     }
-
-    pub usingnamespace CmarkNodeCommon(@This());
 };
 
-pub const CmarkCodeBlockNode = opaque {
-    pub fn getFenceInfo(self: *CmarkHeadingNode) [:0]const u8 {
-        const str: [*:0]const u8 = cmark.cmark_node_get_fence_info(@ptrCast(self)) orelse
-            return error.Failed;
+pub const CodeBlockNode = opaque {
+    pub usingnamespace NodeCommon(@This());
+    pub usingnamespace BlockNodeCommon(@This());
+
+    pub fn getFenceInfo(self: *HeadingNode) [:0]const u8 {
+        // cmark returns an empty string if there is no fence
+        const str: [*:0]const u8 = cmark.cmark_node_get_fence_info(@ptrCast(self)) orelse unreachable;
 
         return std.mem.sliceTo(str, 0);
     }
 
-    pub fn setFenceInfo(self: *CmarkHeadingNode, info: [:0]const u8) !void {
+    pub fn setFenceInfo(self: *HeadingNode, info: [:0]const u8) !void {
         if (cmark.cmark_node_set_fence_info(@ptrCast(self), info.ptr) != 1)
             return error.Failed;
     }
+};
 
-    pub usingnamespace CmarkNodeCommon(@This());
+pub const BlockNode = opaque {
+    pub usingnamespace NodeCommon(@This());
+    pub usingnamespace BlockNodeCommon(@This());
+};
+
+pub const LinkNode = opaque {
+    pub usingnamespace NodeCommon(@This());
+
+    pub fn getUrl(self: *LinkNode) [:0]const u8 {
+        // cmark returns an empty string if no URL
+        const str: [*:0]const u8 = cmark.cmark_node_get_url(@ptrCast(self)) orelse unreachable;
+
+        return std.mem.sliceTo(str, 0);
+    }
+
+    pub fn setUrl(self: *LinkNode, new: [:0]const u8) !void {
+        if (cmark.cmark_node_set_url(@ptrCast(self), new.ptr) != 1)
+            return error.Failed;
+    }
+
+    pub fn getTitle(self: *LinkNode) [:0]const u8 {
+        // cmark returns an empty string if no title
+        const str: [*:0]const u8 = cmark.cmark_node_get_title(@ptrCast(self)) orelse unreachable;
+
+        return std.mem.sliceTo(str, 0);
+    }
+
+    pub fn setTitle(self: *LinkNode, new: [:0]const u8) !void {
+        if (cmark.cmark_node_set_title(@ptrCast(self), new.ptr) != 1)
+            return error.Failed;
+    }
+};
+
+pub const CustomNode = opaque {
+    pub usingnamespace NodeCommon(@This());
+
+    pub fn getOnEnter(self: *CustomNode) [:0]const u8 {
+        // cmark returns an empty string if no URL
+        const str: [*:0]const u8 = cmark.cmark_node_get_on_enter(@ptrCast(self)) orelse unreachable;
+
+        return std.mem.sliceTo(str, 0);
+    }
+
+    pub fn setOnEnter(self: *CustomNode, new: [:0]const u8) !void {
+        if (cmark.cmark_node_set_on_enter(@ptrCast(self), new.ptr) != 1)
+            return error.Failed;
+    }
+
+    pub fn getOnExit(self: *CustomNode) [:0]const u8 {
+        // cmark returns an empty string if no title
+        const str: [*:0]const u8 = cmark.cmark_node_get_on_exit(@ptrCast(self)) orelse unreachable;
+
+        return std.mem.sliceTo(str, 0);
+    }
+
+    pub fn setOnExit(self: *CustomNode, new: [:0]const u8) !void {
+        if (cmark.cmark_node_set_on_exit(@ptrCast(self), new.ptr) != 1)
+            return error.Failed;
+    }
 };
 
 pub const Parser = struct {
@@ -491,7 +593,7 @@ pub const Parser = struct {
         // this has to be heap allocated because otherwise the cmark internal object
         // ends up holding a reference to a stack copy that dies with this function.
         self._cmark_mem = try allocator.create(cmark.cmark_mem);
-        self._cmark_mem.* = wrapCmarkAllocator(self.allocator);
+        self._cmark_mem.* = wrapAllocator(self.allocator);
 
         self._parser = cmark.cmark_parser_new_with_mem(
             @bitCast(options),
@@ -512,8 +614,8 @@ pub const Parser = struct {
         cmark.cmark_parser_feed(self._parser, buffer.ptr, buffer.len);
     }
 
-    pub fn finish(self: Parser) !CmarkNode {
-        return CmarkNode.fromCNode(
+    pub fn finish(self: Parser) !Node {
+        return Node.fromCNode(
             cmark.cmark_parser_finish(self._parser) orelse
                 return error.InvalidDocument,
         );
@@ -530,10 +632,12 @@ pub const Parser = struct {
 };
 
 // the nodes hang on to a reference to the allocator, which does not play nicely at all
-// with our allocator wrapping strategy. Basically, the parser has to live through
+// with our allocator wrapping strategy. Basically, the allocator has to live through
 // node rendering. Due to this, it probably makes sense to keep a hard association
-// between the parser and the node tree.
-pub fn parse(allocator: *std.mem.Allocator, buffer: []const u8, options: ParseOptions) !CmarkNode {
+// between the parser and the node tree (i.e. expose the node iterator and the render
+// method on Parser). This forces more obvious coupling at the cost of in some ways a
+// less elegant API.
+pub fn parse(allocator: *std.mem.Allocator, buffer: []const u8, options: ParseOptions) !Node {
     const parser = try Parser.init(allocator, options);
     defer parser.deinitParser();
 
@@ -542,34 +646,4 @@ pub fn parse(allocator: *std.mem.Allocator, buffer: []const u8, options: ParseOp
     return try parser.finish();
 }
 
-// pub fn parseFile(allocator: std.mem.Allocator, path: []const u8, options: ParseOptions) !CmarkNode
-
-pub fn main() !void {
-    const a = std.heap.page_allocator;
-    const parser = try Parser.init(&a, .{});
-    defer parser.deinit();
-
-    parser.feed(
-        \\###### Test
-        \\
-        \\This is a test of *commonmark* **parsing**
-        \\
-        \\---
-        \\
-        \\ * `good`
-        \\ * [bye](bye)
-        \\
-    );
-
-    const node = try parser.finish();
-    defer node.deinit();
-
-    const iterator = try node.iterator();
-    defer iterator.deinit();
-
-    while (iterator.next()) |visit| {
-        std.debug.print("{s} {s}\n", .{ @tagName(visit.event), @tagName(visit.node) });
-    }
-
-    std.debug.print("{s}\n", .{try node.render(.html, .{})});
-}
+// pub fn parseFile(allocator: std.mem.Allocator, path: []const u8, options: ParseOptions) !Node
