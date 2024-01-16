@@ -9,8 +9,9 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const cmark = b.addModule("cmark", .{
-        .source_file = .{ .path = "src/cmark.zig" },
+        .root_source_file = .{ .path = "src/cmark.zig" },
     });
+    cmark.addIncludePath(.{ .path = b.getInstallPath(.header, "") });
 
     const cmark_c = cmark_build.cmark_lib(b, .{
         .name = "cmark-c",
@@ -26,7 +27,7 @@ pub fn build(b: *std.Build) void {
 }
 
 const ExampleOptions = struct {
-    target: std.zig.CrossTarget,
+    target: std.Build.ResolvedTarget,
     cmark_module: *std.Build.Module,
     cmark_c: *std.Build.Step.Compile,
 };
@@ -40,7 +41,7 @@ const examples = [_]Example{
     .{ .name = "render_html", .file = "examples/render_html.zig" },
 };
 
-pub fn add_examples(b: *std.build, options: ExampleOptions) void {
+pub fn add_examples(b: *std.Build, options: ExampleOptions) void {
     const example_step = b.step("examples", "build examples");
 
     inline for (examples) |example| {
@@ -51,7 +52,7 @@ pub fn add_examples(b: *std.build, options: ExampleOptions) void {
             .optimize = .Debug,
         });
 
-        ex_exe.addModule("cmark", options.cmark_module);
+        ex_exe.root_module.addImport("cmark", options.cmark_module);
         ex_exe.linkLibrary(options.cmark_c);
 
         const install = b.addInstallArtifact(ex_exe, .{});

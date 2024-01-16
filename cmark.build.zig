@@ -5,7 +5,7 @@ const std = @import("std");
 
 const CmarkBuildOptions = struct {
     name: []const u8 = "cmark-c",
-    target: std.zig.CrossTarget,
+    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
 };
 
@@ -22,7 +22,7 @@ pub fn cmark_lib(
     const cflags = [_][]const u8{};
 
     lib.linkLibC();
-    lib.addCSourceFiles(&common_sources, &cflags);
+    lib.addCSourceFiles(.{ .files = &common_sources, .flags = &cflags });
     lib.addIncludePath(.{ .path = cmark_src_prefix ++ "include" });
 
     const config_h = b.addConfigHeader(.{

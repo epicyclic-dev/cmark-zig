@@ -1,0 +1,13 @@
+.{
+    .name = "cmark-zig",
+    .version = "0.1.0-pre",
+    .dependencies = .{},
+    .paths = .{
+        "src",
+        "deps/cmark/src",
+        "deps/cmark/COPYING",
+        "build.zig",
+        "build.zig.zon",
+        "license",
+    },
+}
